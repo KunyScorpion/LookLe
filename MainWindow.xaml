@@ -1,0 +1,614 @@
+<Window x:Class="LeeyesViewer.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:models="clr-namespace:LeeyesViewer.Models"
+        xmlns:conv="clr-namespace:LeeyesViewer.Converters"
+        mc:Ignorable="d"
+        Title="Leeyes Manga &amp; Image Viewer (.NET 8 WPF)"
+        Width="1320" Height="860"
+        MinWidth="920" MinHeight="600"
+        Background="#121316"
+        Foreground="#f1f3f7"
+        FontSize="14"
+        AllowDrop="True"
+        RenderOptions.BitmapScalingMode="HighQuality"
+        RenderOptions.EdgeMode="Aliased"
+        UseLayoutRounding="True"
+        WindowStartupLocation="CenterScreen"
+        Icon="app.ico">
+
+    <Window.Resources>
+        <!-- Converters -->
+        <conv:ThumbWidthConverter x:Key="ThumbWidthConverter" />
+        <conv:ThumbContainerHeightConverter x:Key="ThumbContainerHeightConverter" />
+
+        <!-- Button Styles with Larger, Clearer Targets -->
+        <Style x:Key="ToolbarBtn" TargetType="Button">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Foreground" Value="#a0a6b5" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="9,5" />
+            <Setter Property="Margin" Value="2,0" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="border" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="4" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="#323642" />
+                                <Setter Property="Foreground" Value="#f1f3f7" />
+                                <Setter TargetName="border" Property="BorderBrush" Value="#3a3e4b" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.3" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="PillBtn" TargetType="Button" BasedOn="{StaticResource ToolbarBtn}">
+            <Setter Property="Background" Value="#23252c" />
+            <Setter Property="BorderBrush" Value="#2d3039" />
+            <Setter Property="Foreground" Value="#f1f3f7" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="Padding" Value="11,5" />
+        </Style>
+
+        <Style x:Key="ActivePillBtn" TargetType="Button" BasedOn="{StaticResource PillBtn}">
+            <Setter Property="Background" Value="#17354a" />
+            <Setter Property="BorderBrush" Value="#38bdf8" />
+            <Setter Property="Foreground" Value="#38bdf8" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+
+        <!-- Clean ListBoxItem style with no ugly blue hover overlays -->
+        <Style x:Key="CleanListBoxItem" TargetType="ListBoxItem">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Margin" Value="0" />
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ListBoxItem">
+                        <ContentPresenter />
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+
+    <Grid x:Name="RootLayoutGrid">
+        <Grid.LayoutTransform>
+            <ScaleTransform x:Name="UiScaleTransform" ScaleX="1.0" ScaleY="1.0" />
+        </Grid.LayoutTransform>
+
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" /> <!-- Toolbar -->
+            <RowDefinition Height="*" />    <!-- 3-Pane Area -->
+            <RowDefinition Height="Auto" /> <!-- Status Bar -->
+        </Grid.RowDefinitions>
+
+        <!-- TOP TOOLBAR -->
+        <Border Grid.Row="0" x:Name="ToolbarBorder" Background="#1a1b20" BorderBrush="#2d3039" BorderThickness="0,0,0,1" Height="50" Padding="10,0">
+            <DockPanel LastChildFill="False">
+                <!-- Left Toolbar Group -->
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" DockPanel.Dock="Left">
+                    <Button x:Name="BtnToggleSidebar" Content="☰" Style="{StaticResource ToolbarBtn}" FontSize="16" FontWeight="Bold" ToolTip="サイドバー切替 (F4)" Click="ToggleSidebar_Click" />
+
+                    <!-- App Title -->
+                    <Border Background="#23252c" BorderBrush="#2d3039" BorderThickness="1" CornerRadius="4" Padding="8,4" Margin="6,0,8,0">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBlock Text="📖 " Foreground="#38bdf8" FontSize="15" />
+                            <TextBlock Text="Leeyes" FontWeight="Bold" Foreground="#f1f3f7" FontSize="14" />
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Current Title & Favorite -->
+                    <Border x:Name="BorderTitleBadge" Background="#23252c" BorderBrush="#2d3039" BorderThickness="1" CornerRadius="4" Padding="8,4" Margin="0,0,8,0" Visibility="Collapsed">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBlock x:Name="TxtTitleBadge" Text="Title" Foreground="#a0a6b5" FontSize="13" VerticalAlignment="Center" MaxWidth="180" TextTrimming="CharacterEllipsis" />
+                            <Button x:Name="BtnFavActive" Content="★" Width="24" Height="24" Background="Transparent" Foreground="#6b7280" BorderThickness="0" Margin="4,0,0,0" Cursor="Hand" FontSize="14" Click="ToggleCurrentFavorite_Click" ToolTip="本棚（お気に入り）に追加/解除" Focusable="False" />
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Sibling Buttons -->
+                    <Button x:Name="BtnPrevSibling" Content="⏮" Style="{StaticResource ToolbarBtn}" ToolTip="前の書庫/フォルダ ([)" Click="PrevSibling_Click" />
+                    <Button x:Name="BtnNextSibling" Content="⏭" Style="{StaticResource ToolbarBtn}" ToolTip="次の書庫/フォルダ (])" Click="NextSibling_Click" />
+
+                    <Rectangle Width="1" Height="24" Fill="#2d3039" Margin="6,0" />
+
+                    <!-- Page Navigation (RTL aligned tooltips) -->
+                    <Button x:Name="BtnFirstPage" Content="I◀" Style="{StaticResource ToolbarBtn}" ToolTip="先頭ページ (Home)" Click="FirstPage_Click" />
+                    <Button x:Name="BtnPrevPage" Content="▶" Style="{StaticResource ToolbarBtn}" ToolTip="前のページへ戻る (→ / Shift+Space)" Click="PrevPage_Click" />
+
+                    <Border Background="#23252c" BorderBrush="#2d3039" BorderThickness="1" CornerRadius="4" Padding="10,4" Margin="2,0">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBlock x:Name="TxtCurrentPageNum" Text="0" Foreground="#38bdf8" FontWeight="Bold" FontSize="14" />
+                            <TextBlock Text=" / " Foreground="#6b7280" FontSize="14" />
+                            <TextBlock x:Name="TxtTotalPagesNum" Text="0" Foreground="#a0a6b5" FontSize="14" />
+                        </StackPanel>
+                    </Border>
+
+                    <Button x:Name="BtnNextPage" Content="◀" Style="{StaticResource ToolbarBtn}" ToolTip="次のページへ進む (← / Space / Wheel)" Click="NextPage_Click" />
+                    <Button x:Name="BtnLastPage" Content="▶I" Style="{StaticResource ToolbarBtn}" ToolTip="最終ページ (End)" Click="LastPage_Click" />
+
+                    <Rectangle Width="1" Height="24" Fill="#2d3039" Margin="6,0" />
+
+                    <!-- Spread Modes -->
+                    <Button x:Name="BtnModeSingle" Content="単ページ" Style="{StaticResource PillBtn}" ToolTip="単ページ表示 (S / M)" Click="ModeSingle_Click" />
+                    <Button x:Name="BtnModeSpreadRtl" Content="見開き (右開き)" Style="{StaticResource ActivePillBtn}" ToolTip="見開き・右開き (日本の漫画)" Click="ModeSpreadRtl_Click" />
+                    <Button x:Name="BtnModeSpreadLtr" Content="見開き (左開き)" Style="{StaticResource PillBtn}" ToolTip="見開き・左開き (洋書コミック)" Click="ModeSpreadLtr_Click" />
+                    <Button x:Name="BtnCoverStandalone" Content="表紙単独" Style="{StaticResource ActivePillBtn}" ToolTip="1ページ目(表紙)を単独表示 (C)" Click="ToggleCoverStandalone_Click" Margin="4,0,0,0" />
+                    <Button x:Name="BtnShiftSpread" Content="1Pずらす" Style="{StaticResource PillBtn}" ToolTip="見開きの位置を1ページずらす (O / ↑キーで1P戻す / ↓キーで1P進める)" Click="ShiftSpread_Click" Margin="4,0,0,0" />
+                </StackPanel>
+
+                <!-- Right Toolbar Group -->
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" DockPanel.Dock="Right">
+                    <!-- Thumbnail Size Slider with direct visual indicator -->
+                    <Border Background="#23252c" BorderBrush="#2d3039" BorderThickness="1" CornerRadius="4" Padding="8,4" Margin="0,0,6,0">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBlock Text="🎚" Foreground="#6b7280" Margin="0,0,4,0" FontSize="13" VerticalAlignment="Center" />
+                            <Slider x:Name="SliderThumbSize" Minimum="100" Maximum="350" Value="180" Width="75" SmallChange="10" LargeChange="30" VerticalAlignment="Center" ValueChanged="SliderThumbSize_ValueChanged" ToolTip="サムネイルサイズ調整" Focusable="False" />
+                            <TextBlock x:Name="TxtThumbSizeVal" Text="180px" Foreground="#a0a6b5" FontSize="12" Margin="4,0,0,0" VerticalAlignment="Center" Width="40" />
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Explorer Mode Toggle -->
+                    <Button x:Name="BtnExplorerList" Content="☷" Style="{StaticResource PillBtn}" Padding="9,4" ToolTip="一覧: リスト表示" Click="ExplorerList_Click" />
+                    <Button x:Name="BtnExplorerGrid" Content="▦" Style="{StaticResource ActivePillBtn}" Padding="9,4" ToolTip="一覧: 表紙カードグリッド表示" Click="ExplorerGrid_Click" />
+
+                    <Rectangle Width="1" Height="24" Fill="#2d3039" Margin="6,0" />
+
+                    <!-- Fit Modes -->
+                    <Button x:Name="BtnFitWindow" Content="全体" Style="{StaticResource ActivePillBtn}" ToolTip="ウィンドウ全体に合わせる (1)" Click="FitWindow_Click" />
+                    <Button x:Name="BtnFitWidth" Content="幅" Style="{StaticResource PillBtn}" ToolTip="幅に合わせる (2)" Click="FitWidth_Click" />
+                    <Button x:Name="BtnFitHeight" Content="高" Style="{StaticResource PillBtn}" ToolTip="高さに合わせる (3)" Click="FitHeight_Click" />
+                    <Button x:Name="BtnFitOriginal" Content="1:1" Style="{StaticResource PillBtn}" ToolTip="原寸 100% (4)" Click="FitOriginal_Click" />
+
+                    <Rectangle Width="1" Height="24" Fill="#2d3039" Margin="6,0" />
+
+                    <!-- Zoom, Rotate, Flip & Filter -->
+                    <Button Content="-" Style="{StaticResource ToolbarBtn}" ToolTip="ズームアウト (Ctrl + -)" Click="ZoomOut_Click" />
+                    <Button x:Name="BtnZoomLevel" Content="100%" Style="{StaticResource ToolbarBtn}" ToolTip="ズームリセット (Ctrl + 0)" Click="ZoomReset_Click" MinWidth="48" />
+                    <Button Content="+" Style="{StaticResource ToolbarBtn}" ToolTip="ズームイン (Ctrl + +)" Click="ZoomIn_Click" />
+                    <Button Content="↻" Style="{StaticResource ToolbarBtn}" ToolTip="右へ90°回転 (R)" Click="Rotate_Click" />
+                    <Button x:Name="BtnFlipHorizontal" Content="⇄" Style="{StaticResource ToolbarBtn}" ToolTip="左右反転 (H)" Click="FlipHorizontal_Click" />
+                    <Button x:Name="BtnFilterPopup" Content="🎨" Style="{StaticResource ToolbarBtn}" ToolTip="画像補正フィルター (モノクロ/明るさ/コントラスト)" Click="ToggleFilterPopup_Click" />
+
+                    <!-- Filter Popover -->
+                    <Popup x:Name="PopupFilter" PlacementTarget="{Binding ElementName=BtnFilterPopup}" Placement="Bottom" StaysOpen="False" AllowsTransparency="True">
+                        <Border Background="#1a1b20" BorderBrush="#3a3e4b" BorderThickness="1" CornerRadius="6" Padding="14" Width="290" Margin="0,6,0,0">
+                            <Border.Effect>
+                                <DropShadowEffect Color="#000" BlurRadius="16" ShadowDepth="4" Opacity="0.7" />
+                            </Border.Effect>
+                            <StackPanel>
+                                <TextBlock Text="🎨 画像補正フィルター (GPU)" FontWeight="Bold" Foreground="#38bdf8" FontSize="13" Margin="0,0,0,10" />
+
+                                <!-- Grayscale Checkbox -->
+                                <CheckBox x:Name="ChkGrayscale" Content="モノクロ化 (グレースケール) [G]" Foreground="#f1f3f7" FontSize="13" Margin="0,0,0,12" Checked="FilterControl_Changed" Unchecked="FilterControl_Changed" />
+
+                                <!-- Brightness Slider -->
+                                <TextBlock Text="明るさ:" Foreground="#a0a6b5" FontSize="12" Margin="0,0,0,3" />
+                                <Grid Margin="0,0,0,10">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <Slider Grid.Column="0" x:Name="SliderBrightness" Minimum="-0.5" Maximum="0.5" SmallChange="0.05" LargeChange="0.1" Value="0.0" ValueChanged="FilterControl_Changed" VerticalAlignment="Center" Focusable="False" />
+                                    <TextBlock Grid.Column="1" x:Name="TxtBrightnessVal" Text="0" Foreground="#38bdf8" FontWeight="Bold" FontSize="12" Margin="8,0,0,0" Width="36" />
+                                </Grid>
+
+                                <!-- Contrast Slider -->
+                                <TextBlock Text="コントラスト:" Foreground="#a0a6b5" FontSize="12" Margin="0,0,0,3" />
+                                <Grid Margin="0,0,0,14">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <Slider Grid.Column="0" x:Name="SliderContrast" Minimum="0.2" Maximum="2.5" SmallChange="0.1" LargeChange="0.2" Value="1.0" ValueChanged="FilterControl_Changed" VerticalAlignment="Center" Focusable="False" />
+                                    <TextBlock Grid.Column="1" x:Name="TxtContrastVal" Text="1.0" Foreground="#38bdf8" FontWeight="Bold" FontSize="12" Margin="8,0,0,0" Width="36" />
+                                </Grid>
+
+                                <!-- Filter Buttons -->
+                                <Grid>
+                                    <Button Content="リセット" HorizontalAlignment="Right" Background="#2a2d36" Foreground="#a0a6b5" BorderBrush="#3a3e4b" Padding="14,4" Cursor="Hand" Click="ResetFilter_Click" />
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+                    </Popup>
+
+                    <Rectangle Width="1" Height="24" Fill="#2d3039" Margin="6,0" />
+
+                    <Button x:Name="BtnToggleFilmstrip" Content="⊞" Style="{StaticResource ToolbarBtn}" ToolTip="サムネイル一覧切替 (F3)" Click="ToggleFilmstrip_Click" />
+                    <Button x:Name="BtnFullscreen" Content="⛶" Style="{StaticResource ToolbarBtn}" ToolTip="全画面表示 (F11 / Enter)" Click="ToggleFullscreen_Click" />
+                    <Button Content="⚙" Style="{StaticResource ToolbarBtn}" ToolTip="設定 ＆ ショートカット (F1 / ?)" Click="OpenShortcuts_Click" />
+                </StackPanel>
+            </DockPanel>
+        </Border>
+
+        <!-- MAIN 3-PANE AREA -->
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="290" x:Name="ColSidebar" />
+                <ColumnDefinition Width="4" x:Name="ColSplitter" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <!-- LEFT PANE: BOOKSHELF & EXPLORER TABS -->
+            <Border Grid.Column="0" Background="#1a1b20" BorderBrush="#2d3039" BorderThickness="0,0,1,0">
+                <Grid Margin="10">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" /> <!-- Tab Buttons -->
+                        <RowDefinition Height="*" />    <!-- Tab Content -->
+                    </Grid.RowDefinitions>
+
+                    <!-- Sidebar Tabs (📚 本棚 / 📁 エクスプローラー) -->
+                    <Grid Grid.Row="0" Margin="0,0,0,10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Button Grid.Column="0" x:Name="BtnTabBookshelf" Content="📚 本棚" Style="{StaticResource ActivePillBtn}" Margin="0,0,2,0" Click="TabBookshelf_Click" />
+                        <Button Grid.Column="1" x:Name="BtnTabExplorer" Content="📁 エクスプローラー" Style="{StaticResource PillBtn}" Margin="2,0,0,0" Click="TabExplorer_Click" />
+                    </Grid>
+
+                    <!-- TAB 1: 📚 BOOKSHELF (お気に入り) -->
+                    <Grid Grid.Row="1" x:Name="PanelTabBookshelf" Visibility="Visible">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" /> <!-- Header -->
+                            <RowDefinition Height="*" />    <!-- Cards / List -->
+                        </Grid.RowDefinitions>
+
+                        <DockPanel Grid.Row="0" Margin="0,0,0,8">
+                            <TextBlock Text="📚 登録済み本棚" FontWeight="Bold" Foreground="#38bdf8" FontSize="13" VerticalAlignment="Center" />
+                            <TextBlock x:Name="TxtBookshelfCount" Text="(0 件)" Foreground="#a0a6b5" FontSize="12" Margin="6,0,0,0" VerticalAlignment="Center" />
+                        </DockPanel>
+
+                        <!-- Bookshelf Empty Placeholder -->
+                        <StackPanel x:Name="PanelBookshelfEmpty" Grid.Row="1" VerticalAlignment="Center" HorizontalAlignment="Center" Visibility="Collapsed">
+                            <TextBlock Text="📚" FontSize="36" HorizontalAlignment="Center" Margin="0,0,0,8" />
+                            <TextBlock Text="本棚にアイテムがありません" Foreground="#a0a6b5" FontSize="12" HorizontalAlignment="Center" Margin="0,0,0,4" />
+                            <TextBlock Text="右クリックまたは★ボタンで追加できます" Foreground="#6b7280" FontSize="11" HorizontalAlignment="Center" TextWrapping="Wrap" TextAlignment="Center" />
+                        </StackPanel>
+
+                        <!-- Bookshelf Grid View with Active Item Highlight -->
+                        <ListBox Grid.Row="1" x:Name="GridBookshelfItems" ItemContainerStyle="{StaticResource CleanListBoxItem}" Background="Transparent" BorderThickness="0" Foreground="#f1f3f7" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.CanContentScroll="False" PreviewMouseWheel="LeftPane_PreviewMouseWheel" HorizontalContentAlignment="Stretch" SelectionChanged="GridBookshelfItems_SelectionChanged">
+                            <ListBox.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <WrapPanel IsItemsHost="True" />
+                                </ItemsPanelTemplate>
+                            </ListBox.ItemsPanel>
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Width="114" Height="158" Background="#23252c" CornerRadius="6" Margin="4" Padding="4" Cursor="Hand" MouseLeftButtonUp="BookshelfItem_MouseLeftButtonUp">
+                                        <Border.Style>
+                                            <Style TargetType="Border">
+                                                <Setter Property="BorderBrush" Value="#2d3039" />
+                                                <Setter Property="BorderThickness" Value="1" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsActiveItem}" Value="True">
+                                                        <Setter Property="BorderBrush" Value="#38bdf8" />
+                                                        <Setter Property="BorderThickness" Value="2" />
+                                                        <Setter Property="Effect">
+                                                            <Setter.Value>
+                                                                <DropShadowEffect Color="#38bdf8" BlurRadius="12" ShadowDepth="0" Opacity="0.95" />
+                                                            </Setter.Value>
+                                                        </Setter>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Border.Style>
+                                        <Border.ContextMenu>
+                                            <ContextMenu Background="#1a1b20" Foreground="#f1f3f7" BorderBrush="#3a3e4b">
+                                                <MenuItem Header="★ 本棚から削除" Click="RemoveFavorite_Click" />
+                                            </ContextMenu>
+                                        </Border.ContextMenu>
+                                        <Grid>
+                                            <Grid.RowDefinitions>
+                                                <RowDefinition Height="*" />
+                                                <RowDefinition Height="Auto" />
+                                            </Grid.RowDefinitions>
+                                            <Border Background="#121316" CornerRadius="4" ClipToBounds="True">
+                                                <Image Source="{Binding CoverBitmap}" Stretch="Uniform" VerticalAlignment="Center" HorizontalAlignment="Center" RenderOptions.BitmapScalingMode="HighQuality" />
+                                            </Border>
+                                            <TextBlock Grid.Row="1" Text="{Binding Name}" Foreground="#f1f3f7" FontSize="11" TextTrimming="CharacterEllipsis" Margin="0,5,0,1" HorizontalAlignment="Center" />
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+
+                        <!-- Bookshelf List View with Active Item Highlight -->
+                        <ListBox Grid.Row="1" x:Name="ListBookshelfItems" ItemContainerStyle="{StaticResource CleanListBoxItem}" Background="Transparent" BorderThickness="0" Foreground="#f1f3f7" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.CanContentScroll="False" PreviewMouseWheel="LeftPane_PreviewMouseWheel" HorizontalContentAlignment="Stretch" Visibility="Collapsed" SelectionChanged="ListBookshelfItems_SelectionChanged">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Padding="8,5" CornerRadius="4" Margin="0,1" Cursor="Hand" MouseLeftButtonUp="BookshelfItem_MouseLeftButtonUp">
+                                        <Border.Style>
+                                            <Style TargetType="Border">
+                                                <Setter Property="Background" Value="Transparent" />
+                                                <Setter Property="BorderBrush" Value="Transparent" />
+                                                <Setter Property="BorderThickness" Value="1" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsActiveItem}" Value="True">
+                                                        <Setter Property="Background" Value="#17354a" />
+                                                        <Setter Property="BorderBrush" Value="#38bdf8" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Border.Style>
+                                        <Border.ContextMenu>
+                                            <ContextMenu Background="#1a1b20" Foreground="#f1f3f7" BorderBrush="#3a3e4b">
+                                                <MenuItem Header="★ 本棚から削除" Click="RemoveFavorite_Click" />
+                                            </ContextMenu>
+                                        </Border.ContextMenu>
+                                        <DockPanel LastChildFill="True">
+                                            <TextBlock Text="📖 " Foreground="#eab308" DockPanel.Dock="Left" FontSize="14" />
+                                            <TextBlock Text="{Binding Name}" Foreground="#f1f3f7" FontSize="13" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                                        </DockPanel>
+                                    </Border>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                    </Grid>
+
+                    <!-- TAB 2: 📁 EXPLORER (ツリー・フォルダ) -->
+                    <Grid Grid.Row="1" x:Name="PanelTabExplorer" Visibility="Collapsed">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" /> <!-- Drives -->
+                            <RowDefinition Height="Auto" /> <!-- Explorer Header -->
+                            <RowDefinition Height="Auto" /> <!-- Search -->
+                            <RowDefinition Height="*" />    <!-- Tree / Grid List -->
+                        </Grid.RowDefinitions>
+
+                        <!-- Drives List -->
+                        <StackPanel Grid.Row="0" Margin="0,0,0,10">
+                            <TextBlock Text="HARD DRIVES" Foreground="#6b7280" FontWeight="Bold" FontSize="11" Margin="0,0,0,6" />
+                            <WrapPanel x:Name="PanelDrives" />
+                        </StackPanel>
+
+                        <!-- Explorer Header -->
+                        <DockPanel Grid.Row="1" Margin="0,0,0,8">
+                            <Button Content="⬆ 親フォルダ" DockPanel.Dock="Left" Style="{StaticResource PillBtn}" Padding="8,3" Click="GoParentFolder_Click" />
+                            <Button Content="↻" DockPanel.Dock="Right" Style="{StaticResource ToolbarBtn}" Padding="6,3" Click="RefreshFolder_Click" ToolTip="再読み込み" />
+                            <TextBlock x:Name="TxtCurrentDirName" Text="Folder" Foreground="#f1f3f7" FontWeight="Bold" FontSize="13" VerticalAlignment="Center" Margin="8,0" TextTrimming="CharacterEllipsis" />
+                        </DockPanel>
+
+                        <!-- Search Filter -->
+                        <TextBox Grid.Row="2" x:Name="TxtSearchFilter" Background="#23252c" Foreground="#f1f3f7" BorderBrush="#2d3039" Padding="8,5" Margin="0,0,0,10" FontSize="13" TextChanged="TxtSearchFilter_TextChanged" />
+
+                        <!-- Explorer Items List / Grid -->
+                        <Grid Grid.Row="3">
+                            <!-- List View with Active Item Highlight -->
+                            <ListBox x:Name="ListExplorerItems" ItemContainerStyle="{StaticResource CleanListBoxItem}" Background="Transparent" BorderThickness="0" Foreground="#f1f3f7" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.CanContentScroll="False" PreviewMouseWheel="LeftPane_PreviewMouseWheel" HorizontalContentAlignment="Stretch" Visibility="Collapsed" SelectionChanged="ListExplorerItems_SelectionChanged">
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Padding="8,5" CornerRadius="4" Margin="0,1" Cursor="Hand" MouseLeftButtonUp="ExplorerItem_MouseLeftButtonUp">
+                                            <Border.Style>
+                                                <Style TargetType="Border">
+                                                    <Setter Property="Background" Value="Transparent" />
+                                                    <Setter Property="BorderBrush" Value="Transparent" />
+                                                    <Setter Property="BorderThickness" Value="1" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsActiveItem}" Value="True">
+                                                            <Setter Property="Background" Value="#17354a" />
+                                                            <Setter Property="BorderBrush" Value="#38bdf8" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Border.Style>
+                                            <Border.ContextMenu>
+                                                <ContextMenu Background="#1a1b20" Foreground="#f1f3f7" BorderBrush="#3a3e4b">
+                                                    <MenuItem Header="★ 本棚に追加 / 解除" Click="ContextToggleFavorite_Click" />
+                                                </ContextMenu>
+                                            </Border.ContextMenu>
+                                            <DockPanel LastChildFill="True">
+                                                <TextBlock Text="📁 " Foreground="#eab308" DockPanel.Dock="Left" FontSize="14" />
+                                                <TextBlock Text="{Binding Name}" Foreground="#f1f3f7" FontSize="13" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                                            </DockPanel>
+                                        </Border>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+
+                            <!-- Card Grid View with Active Item Highlight -->
+                            <ListBox x:Name="GridExplorerItems" ItemContainerStyle="{StaticResource CleanListBoxItem}" Background="Transparent" BorderThickness="0" Foreground="#f1f3f7" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.CanContentScroll="False" PreviewMouseWheel="LeftPane_PreviewMouseWheel" HorizontalContentAlignment="Stretch" Visibility="Visible" SelectionChanged="GridExplorerItems_SelectionChanged">
+                                <ListBox.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <WrapPanel IsItemsHost="True" />
+                                    </ItemsPanelTemplate>
+                                </ListBox.ItemsPanel>
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Width="114" Height="158" Background="#23252c" CornerRadius="6" Margin="4" Padding="4" Cursor="Hand" MouseLeftButtonUp="ExplorerItem_MouseLeftButtonUp">
+                                            <Border.Style>
+                                                <Style TargetType="Border">
+                                                    <Setter Property="BorderBrush" Value="#2d3039" />
+                                                    <Setter Property="BorderThickness" Value="1" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsActiveItem}" Value="True">
+                                                            <Setter Property="BorderBrush" Value="#38bdf8" />
+                                                            <Setter Property="BorderThickness" Value="2" />
+                                                            <Setter Property="Effect">
+                                                                <Setter.Value>
+                                                                    <DropShadowEffect Color="#38bdf8" BlurRadius="12" ShadowDepth="0" Opacity="0.95" />
+                                                                </Setter.Value>
+                                                            </Setter>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Border.Style>
+                                            <Border.ContextMenu>
+                                                <ContextMenu Background="#1a1b20" Foreground="#f1f3f7" BorderBrush="#3a3e4b">
+                                                    <MenuItem Header="★ 本棚に追加 / 解除" Click="ContextToggleFavorite_Click" />
+                                                </ContextMenu>
+                                            </Border.ContextMenu>
+                                            <Grid>
+                                                <Grid.RowDefinitions>
+                                                    <RowDefinition Height="*" />
+                                                    <RowDefinition Height="Auto" />
+                                                </Grid.RowDefinitions>
+                                                <Border Background="#121316" CornerRadius="4" ClipToBounds="True">
+                                                    <Image Source="{Binding CoverBitmap}" Stretch="Uniform" VerticalAlignment="Center" HorizontalAlignment="Center" RenderOptions.BitmapScalingMode="HighQuality" />
+                                                </Border>
+                                                <TextBlock Grid.Row="1" Text="{Binding Name}" Foreground="#f1f3f7" FontSize="11" TextTrimming="CharacterEllipsis" Margin="0,5,0,1" HorizontalAlignment="Center" />
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                        </Grid>
+                    </Grid>
+                </Grid>
+            </Border>
+
+            <!-- SPLITTER -->
+            <GridSplitter Grid.Column="1" Width="4" HorizontalAlignment="Stretch" Background="#2d3039" Cursor="SizeWE" />
+
+            <!-- CENTER & BOTTOM: VIEWPORT & THUMBNAILS -->
+            <Grid Grid.Column="2">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" x:Name="RowThumbnails" />
+                </Grid.RowDefinitions>
+
+                <!-- MAIN IMAGE VIEWPORT -->
+                <Grid Grid.Row="0" x:Name="GridMainViewport" Background="#0c0d10" ClipToBounds="True" MouseWheel="Viewport_MouseWheel" MouseDown="Viewport_MouseDown" MouseMove="Viewport_MouseMove" MouseUp="Viewport_MouseUp" MouseLeftButtonDown="Viewport_MouseLeftButtonDown">
+                    
+                    <!-- Empty Guide Overlay -->
+                    <StackPanel x:Name="PanelEmptyGuide" HorizontalAlignment="Center" VerticalAlignment="Center">
+                        <TextBlock Text="📖" FontSize="68" HorizontalAlignment="Center" Margin="0,0,0,16" />
+                        <TextBlock Text="漫画・画像ファイルを開く" FontSize="22" FontWeight="Bold" Foreground="#f1f3f7" HorizontalAlignment="Center" Margin="0,0,0,8" />
+                        <TextBlock Text="左側の本棚・フォルダから選択、または書庫をドラッグ＆ドロップしてください" Foreground="#a0a6b5" FontSize="14" HorizontalAlignment="Center" />
+                    </StackPanel>
+
+                    <!-- Click Zones Hints (Left is Next Page in RTL, Right is Prev Page) -->
+                    <Border x:Name="ZoneLeft" HorizontalAlignment="Left" Width="260" Background="Transparent" ToolTip="次のページへ進む (クリック)" MouseLeftButtonDown="ZoneLeft_Click" />
+                    <Border x:Name="ZoneRight" HorizontalAlignment="Right" Width="260" Background="Transparent" ToolTip="前のページへ戻る (クリック)" MouseLeftButtonDown="ZoneRight_Click" />
+
+                    <!-- Image Display Canvas / Container (Smooth Zoom & Pan) -->
+                    <Grid x:Name="ContainerImages" HorizontalAlignment="Center" VerticalAlignment="Center">
+                        <Grid.RenderTransform>
+                            <TransformGroup>
+                                <ScaleTransform x:Name="TransformScale" ScaleX="1" ScaleY="1" />
+                                <TranslateTransform x:Name="TransformTranslate" X="0" Y="0" />
+                            </TransformGroup>
+                        </Grid.RenderTransform>
+
+                        <!-- Spread Layout (Dual Images or Single Image with Center-Axis Layout Transforms) -->
+                        <StackPanel x:Name="PanelSpread" Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
+                            <Image x:Name="ImgLeft" Stretch="Uniform" RenderOptions.BitmapScalingMode="HighQuality" Margin="0" Visibility="Collapsed">
+                                <Image.LayoutTransform>
+                                    <TransformGroup>
+                                        <RotateTransform x:Name="RotateImgLeft" Angle="0" />
+                                        <ScaleTransform x:Name="FlipImgLeft" ScaleX="1" ScaleY="1" />
+                                    </TransformGroup>
+                                </Image.LayoutTransform>
+                            </Image>
+                            <Image x:Name="ImgRight" Stretch="Uniform" RenderOptions.BitmapScalingMode="HighQuality" Margin="0" Visibility="Collapsed">
+                                <Image.LayoutTransform>
+                                    <TransformGroup>
+                                        <RotateTransform x:Name="RotateImgRight" Angle="0" />
+                                        <ScaleTransform x:Name="FlipImgRight" ScaleX="1" ScaleY="1" />
+                                    </TransformGroup>
+                                </Image.LayoutTransform>
+                            </Image>
+                            <Image x:Name="ImgSingle" Stretch="Uniform" RenderOptions.BitmapScalingMode="HighQuality" Margin="0" Visibility="Visible">
+                                <Image.LayoutTransform>
+                                    <TransformGroup>
+                                        <RotateTransform x:Name="RotateImgSingle" Angle="0" />
+                                        <ScaleTransform x:Name="FlipImgSingle" ScaleX="1" ScaleY="1" />
+                                    </TransformGroup>
+                                </Image.LayoutTransform>
+                            </Image>
+                        </StackPanel>
+                    </Grid>
+                </Grid>
+
+                <!-- BOTTOM THUMBNAIL FILMSTRIP with Dynamic Slider Dimensions & Cyan Glow Active Border -->
+                <Border Grid.Row="1" x:Name="BorderFilmstrip" Background="#1a1b20" BorderBrush="#2d3039" BorderThickness="0,1,0,0" Height="{Binding Value, ElementName=SliderThumbSize, Converter={StaticResource ThumbContainerHeightConverter}}" Padding="8,4">
+                    <ScrollViewer x:Name="ScrollFilmstrip" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+                        <ItemsControl x:Name="ItemsFilmstrip">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <VirtualizingStackPanel x:Name="StackFilmstrip" Orientation="Horizontal" />
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Height="{Binding Value, ElementName=SliderThumbSize}" Width="{Binding Value, ElementName=SliderThumbSize, Converter={StaticResource ThumbWidthConverter}}" Background="#23252c" CornerRadius="4" Margin="4,0" Cursor="Hand" MouseLeftButtonDown="ThumbCard_Click">
+                                        <Border.Style>
+                                            <Style TargetType="Border">
+                                                <Setter Property="BorderBrush" Value="#2d3039" />
+                                                <Setter Property="BorderThickness" Value="2" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsActivePage}" Value="True">
+                                                        <Setter Property="BorderBrush" Value="#38bdf8" />
+                                                        <Setter Property="BorderThickness" Value="3" />
+                                                        <Setter Property="Effect">
+                                                            <Setter.Value>
+                                                                <DropShadowEffect Color="#38bdf8" BlurRadius="12" ShadowDepth="0" Opacity="0.95" />
+                                                            </Setter.Value>
+                                                        </Setter>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Border.Style>
+                                        <Grid>
+                                            <Grid.RowDefinitions>
+                                                <RowDefinition Height="*" />
+                                                <RowDefinition Height="Auto" />
+                                            </Grid.RowDefinitions>
+                                            <Border Background="#121316" CornerRadius="2" ClipToBounds="True">
+                                                <Image Source="{Binding ThumbnailBitmap}" Stretch="Uniform" VerticalAlignment="Center" HorizontalAlignment="Center" RenderOptions.BitmapScalingMode="HighQuality" />
+                                            </Border>
+                                            <Border Grid.Row="1" Background="#000" Opacity="0.85" Padding="4,2">
+                                                <TextBlock Text="{Binding Index, StringFormat='P.{0}'}" Foreground="#f1f3f7" FontSize="11" HorizontalAlignment="Center" FontWeight="Bold" />
+                                            </Border>
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+                </Border>
+            </Grid>
+        </Grid>
+
+        <!-- BOTTOM STATUS BAR -->
+        <Border Grid.Row="2" Background="#1a1b20" BorderBrush="#2d3039" BorderThickness="0,1,0,0" Height="30" Padding="12,0">
+            <DockPanel LastChildFill="False">
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" DockPanel.Dock="Left">
+                    <Border Background="#23252c" BorderBrush="#2d3039" BorderThickness="1" CornerRadius="3" Padding="6,2" Margin="0,0,8,0">
+                        <TextBlock x:Name="TxtStatusType" Text="READY" Foreground="#38bdf8" FontSize="12" FontWeight="Bold" />
+                    </Border>
+                    <TextBlock x:Name="TxtStatusPath" Text="未読み込み" Foreground="#a0a6b5" FontSize="13" MaxWidth="600" TextTrimming="CharacterEllipsis" />
+                </StackPanel>
+
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" DockPanel.Dock="Right">
+                    <TextBlock Text="ページ: " Foreground="#6b7280" FontSize="13" />
+                    <TextBlock x:Name="TxtStatusPages" Text="-" Foreground="#38bdf8" FontWeight="Bold" FontSize="13" Margin="0,0,16,0" />
+
+                    <TextBlock Text="解像度: " Foreground="#6b7280" FontSize="13" />
+                    <TextBlock x:Name="TxtStatusResolution" Text="-" Foreground="#f1f3f7" FontSize="13" Margin="0,0,16,0" />
+
+                    <TextBlock Text="モード: " Foreground="#6b7280" FontSize="13" />
+                    <TextBlock x:Name="TxtStatusMode" Text="見開き (右開き)" Foreground="#38bdf8" FontSize="13" Margin="0,0,16,0" />
+
+                    <TextBlock Text="ズーム: " Foreground="#6b7280" FontSize="13" />
+                    <TextBlock x:Name="TxtStatusZoom" Text="100%" Foreground="#f1f3f7" FontSize="13" />
+                </StackPanel>
+            </DockPanel>
+        </Border>
+    </Grid>
+</Window>
