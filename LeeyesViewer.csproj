@@ -8,6 +8,12 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>LeeyesViewer</AssemblyName>
     <RootNamespace>LeeyesViewer</RootNamespace>
+    <AssemblyTitle>LookLe</AssemblyTitle>
+    <Product>LookLe</Product>
+    <Version>1.0.0</Version>
+    <AssemblyVersion>1.0.0</AssemblyVersion>
+    <FileVersion>1.0.0</FileVersion>
+    <Description>LookLe - High Performance Portable Manga &amp; Image Viewer</Description>
     <ApplicationIcon>app.ico</ApplicationIcon>
     <PublishSingleFile>true</PublishSingleFile>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>

@@ -11,12 +11,13 @@ public static class VerificationTests
 {
     public static void RunAllTests()
     {
-        Console.WriteLine("=== Running LeeyesViewer Native C# Tests ===");
+        Console.WriteLine("=== Running LookLe Native C# Tests ===");
 
         TestNaturalSorting();
         TestSpreadCalculator();
         TestShiftJisZipStreaming();
         TestThumbnailCache();
+        TestPortableStoragePaths();
 
         Console.WriteLine("=== ALL TESTS PASSED SUCCESSFULLY ===");
     }
@@ -88,5 +89,21 @@ public static class VerificationTests
         var stats = cache.GetCacheStats();
         Debug.Assert(stats.CacheDir.Length > 0);
         Console.WriteLine($"✓ Thumbnail Cache Manager ({stats.CacheDir}): OK");
+    }
+
+    private static void TestPortableStoragePaths()
+    {
+        var settingsService = new SettingsService();
+        var testSettings = settingsService.LoadSettings();
+        Debug.Assert(testSettings != null);
+
+        var expectedSettingsPath = Path.Combine(AppContext.BaseDirectory, "settings.json");
+        var expectedThumbnailPath = Path.Combine(AppContext.BaseDirectory, "Thumbnails");
+
+        var cache = new ThumbnailCacheService();
+        var stats = cache.GetCacheStats();
+
+        Debug.Assert(stats.CacheDir == expectedThumbnailPath, $"Cache dir mismatch: expected {expectedThumbnailPath}, got {stats.CacheDir}");
+        Console.WriteLine($"✓ Portable Storage Paths: OK (Settings: {expectedSettingsPath}, Cache: {expectedThumbnailPath})");
     }
 }

@@ -13,6 +13,7 @@ public class DirectoryItem : ObservableObject
     private bool _isFavorite;
     private BitmapSource? _coverBitmap;
     private bool _isActiveItem;
+    private int _pageIndex = -1;
 
     public string Name
     {
@@ -54,6 +55,12 @@ public class DirectoryItem : ObservableObject
     {
         get => _isActiveItem;
         set => SetProperty(ref _isActiveItem, value);
+    }
+
+    public int PageIndex
+    {
+        get => _pageIndex;
+        set => SetProperty(ref _pageIndex, value);
     }
 }
 
@@ -109,7 +116,7 @@ public class AppSettings
 {
     public List<FavoriteItem> Favorites { get; set; } = new();
     public string? LastOpenedPath { get; set; }
-    public int ThumbnailSize { get; set; } = 180;
+    public int ThumbnailSize { get; set; } = 150;
     public ExplorerViewMode ExplorerMode { get; set; } = ExplorerViewMode.Grid;
     public ViewMode ViewMode { get; set; } = ViewMode.SpreadRtl;
     public bool CoverStandalone { get; set; } = true;

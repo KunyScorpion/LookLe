@@ -46,6 +46,12 @@ public partial class MainWindow : Window
     private double _brightness = 0.0;
     private double _contrast = 1.0;
 
+    // Loupe (Magnifying glass) properties
+    private bool _isLoupeActive = false;
+    private double _loupeFactor = 2.0;
+    private bool _isLoupeCircle = true;
+    private Point _lastMouseViewportPos = new(400, 300);
+
     public double CurrentUiScale => _uiScale;
     public bool IsContinuousNavigationEnabled => _settings.ContinuousNavigation;
 
@@ -68,6 +74,7 @@ public partial class MainWindow : Window
         Closing += MainWindow_Closing;
         PreviewKeyDown += MainWindow_PreviewKeyDown;
         PreviewMouseDown += MainWindow_PreviewMouseDown;
+        PreviewMouseMove += MainWindow_PreviewMouseMove;
         Drop += MainWindow_Drop;
         SizeChanged += MainWindow_SizeChanged;
     }
@@ -109,7 +116,7 @@ public partial class MainWindow : Window
         _explorerViewMode = _settings.ExplorerMode;
         _uiScale = _settings.UiScale > 0 ? _settings.UiScale : 1.0;
         ApplyUiScale(_uiScale);
-        SliderThumbSize.Value = _settings.ThumbnailSize > 0 ? _settings.ThumbnailSize : 180;
+        SliderThumbSize.Value = _settings.ThumbnailSize > 0 ? _settings.ThumbnailSize : 150;
 
         UpdateSpreadModeButtons();
         UpdateFitModeButtons();
@@ -198,7 +205,33 @@ public partial class MainWindow : Window
         _settings.ContinuousNavigation = enabled;
     }
 
-    private void UpdateActiveLeftPaneItem(string? activePath)
+    private void UpdateActiveLeftPanePages(params ViewerPage?[] activePages)
+    {
+        var validPages = activePages.Where(p => p != null).ToList();
+        if (validPages.Count == 0) return;
+
+        var paths = validPages.Select(p => p!.Path).Where(p => !string.IsNullOrEmpty(p)).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var indices = validPages.Select(p => p!.Index).ToHashSet();
+
+        foreach (var fav in _favoriteItems)
+        {
+            fav.IsActiveItem = paths.Contains(fav.Path) || (_isArchive && !string.IsNullOrEmpty(_currentPath) && string.Equals(fav.Path, _currentPath, StringComparison.OrdinalIgnoreCase));
+        }
+
+        foreach (var item in _explorerItems)
+        {
+            if (_isArchive)
+            {
+                item.IsActiveItem = indices.Contains(item.PageIndex);
+            }
+            else
+            {
+                item.IsActiveItem = paths.Contains(item.Path);
+            }
+        }
+    }
+
+    private void UpdateActiveLeftPanePath(string? activePath)
     {
         if (string.IsNullOrEmpty(activePath)) return;
 
@@ -215,12 +248,34 @@ public partial class MainWindow : Window
 
     public void NavigateToParent()
     {
+        if (_isArchive && !string.IsNullOrEmpty(_currentPath))
+        {
+            var parent = Path.GetDirectoryName(_currentPath);
+            if (!string.IsNullOrEmpty(parent) && Directory.Exists(parent))
+            {
+                LoadDirectory(parent);
+                SwitchToTab(isBookshelf: false);
+                return;
+            }
+        }
+
         if (!string.IsNullOrEmpty(_activeDirectory))
         {
-            var parent = Directory.GetParent(_activeDirectory);
-            if (parent != null)
+            if (File.Exists(_activeDirectory))
             {
-                LoadDirectory(parent.FullName);
+                var parent = Path.GetDirectoryName(_activeDirectory);
+                if (!string.IsNullOrEmpty(parent) && Directory.Exists(parent))
+                {
+                    LoadDirectory(parent);
+                    SwitchToTab(isBookshelf: false);
+                    return;
+                }
+            }
+
+            var parentDir = Directory.GetParent(_activeDirectory);
+            if (parentDir != null)
+            {
+                LoadDirectory(parentDir.FullName);
                 SwitchToTab(isBookshelf: false);
                 return;
             }
@@ -276,9 +331,9 @@ public partial class MainWindow : Window
             {
                 e.Handled = true;
 
-                // Card Grid row height: 158px + 8px margin = 166px
+                // Card Grid row height: dynamic based on slider value
                 // List row height: ~32px, 3 rows = 96px
-                double step = (_explorerViewMode == ExplorerViewMode.Grid) ? 166.0 : 96.0;
+                double step = (_explorerViewMode == ExplorerViewMode.Grid) ? (SliderThumbSize.Value + 12.0) : 96.0;
 
                 double targetOffset = e.Delta < 0
                     ? scrollViewer.VerticalOffset + step
@@ -377,38 +432,15 @@ public partial class MainWindow : Window
         if (isArch || File.Exists(fav.Path))
         {
             OpenPath(fav.Path);
-            var dir = Path.GetDirectoryName(fav.Path);
-            if (!string.IsNullOrEmpty(dir) && Directory.Exists(dir))
-            {
-                LoadDirectory(dir);
-            }
+            SwitchToTab(isBookshelf: false);
         }
         else if (Directory.Exists(fav.Path))
         {
             LoadDirectory(fav.Path);
-
-            var dirInfo = new DirectoryInfo(fav.Path);
-            var hasImages = dirInfo.EnumerateFiles().Any(f => ArchiveManager.IsSupportedImageExtension(f.Extension));
-
-            if (hasImages)
-            {
-                OpenPath(fav.Path);
-            }
-            else
-            {
-                // Switch to explorer tab so the user sees the folder's volumes/ZIPs
-                SwitchToTab(isBookshelf: false);
-
-                // Auto-open first volume if present
-                var firstArchive = _explorerItems.FirstOrDefault(i => i.ItemType == ItemType.Archive);
-                if (firstArchive != null)
-                {
-                    OpenPath(firstArchive.Path);
-                }
-            }
+            SwitchToTab(isBookshelf: false);
         }
 
-        UpdateActiveLeftPaneItem(fav.Path);
+        UpdateActiveLeftPanePath(fav.Path);
     }
 
     #endregion
@@ -496,7 +528,7 @@ public partial class MainWindow : Window
                 }
             }
 
-            UpdateActiveLeftPaneItem(_currentPath);
+            UpdateActiveLeftPanePath(_currentPath);
 
             // Load thumbnails/covers asynchronously
             Task.Run(async () =>
@@ -547,6 +579,53 @@ public partial class MainWindow : Window
         FilterExplorerItems();
     }
 
+    private void PopulateExplorerFromArchive(string archivePath, List<ViewerPage> pages)
+    {
+        _activeDirectory = archivePath;
+        TxtCurrentDirName.Text = Path.GetFileName(archivePath);
+
+        _dirThumbCts?.Cancel();
+        _dirThumbCts = new CancellationTokenSource();
+        var ct = _dirThumbCts.Token;
+
+        _explorerItems.Clear();
+        foreach (var page in pages)
+        {
+            _explorerItems.Add(new DirectoryItem
+            {
+                Name = Path.GetFileName(page.Name),
+                Path = page.Path,
+                ItemType = ItemType.Image,
+                PageIndex = page.Index,
+                Size = page.Size
+            });
+        }
+
+        FilterExplorerItems();
+
+        // Load thumbnails asynchronously for archive items
+        Task.Run(async () =>
+        {
+            foreach (var page in pages.ToList())
+            {
+                if (ct.IsCancellationRequested) break;
+                try
+                {
+                    var thumb = await _imagePipeline.LoadThumbnailAsync(page);
+                    if (thumb != null && !ct.IsCancellationRequested)
+                    {
+                        var targetItem = _explorerItems.FirstOrDefault(i => i.PageIndex == page.Index);
+                        if (targetItem != null)
+                        {
+                            Dispatcher.Invoke(() => targetItem.CoverBitmap = thumb);
+                        }
+                    }
+                }
+                catch { }
+            }
+        }, ct);
+    }
+
     private void FilterExplorerItems()
     {
         var filter = TxtSearchFilter.Text.Trim();
@@ -565,7 +644,17 @@ public partial class MainWindow : Window
 
     private void RefreshFolder_Click(object sender, RoutedEventArgs e)
     {
-        if (!string.IsNullOrEmpty(_activeDirectory)) LoadDirectory(_activeDirectory);
+        if (!string.IsNullOrEmpty(_activeDirectory))
+        {
+            if (_isArchive && File.Exists(_activeDirectory))
+            {
+                OpenPath(_activeDirectory, _currentIndex);
+            }
+            else if (Directory.Exists(_activeDirectory))
+            {
+                LoadDirectory(_activeDirectory);
+            }
+        }
     }
 
     private void TxtSearchFilter_TextChanged(object sender, TextChangedEventArgs e)
@@ -617,22 +706,29 @@ public partial class MainWindow : Window
         }
         else if (item.ItemType == ItemType.Image)
         {
-            if (_currentPath != _activeDirectory && !string.IsNullOrEmpty(_activeDirectory))
+            if (_isArchive && item.PageIndex >= 0)
             {
-                OpenPath(_activeDirectory);
+                GoToPage(item.PageIndex);
             }
-            var page = _pages.FirstOrDefault(p => p.Path == item.Path);
-            if (page != null) GoToPage(page.Index);
+            else if (_currentPath != _activeDirectory && !string.IsNullOrEmpty(_activeDirectory))
+            {
+                var allImages = _explorerItems.Where(i => i.ItemType == ItemType.Image).ToList();
+                int idx = allImages.FindIndex(i => string.Equals(i.Path, item.Path, StringComparison.OrdinalIgnoreCase));
+                OpenPath(_activeDirectory, startIndex: Math.Max(0, idx));
+            }
+            else
+            {
+                var page = _pages.FirstOrDefault(p => string.Equals(p.Path, item.Path, StringComparison.OrdinalIgnoreCase));
+                if (page != null) GoToPage(page.Index);
+            }
         }
-
-        UpdateActiveLeftPaneItem(item.Path);
     }
 
     #endregion
 
     #region Viewer Core Logic (Dynamic Landscape & Dual Spread Rendering)
 
-    public async void OpenPath(string path)
+    public async void OpenPath(string path, int startIndex = 0)
     {
         try
         {
@@ -644,6 +740,7 @@ public partial class MainWindow : Window
             {
                 _pages = _archiveManager.ListArchiveEntries(path);
                 TxtStatusType.Text = Path.GetExtension(path).ToUpperInvariant().TrimStart('.') + " 書庫";
+                PopulateExplorerFromArchive(path, _pages);
             }
             else if (Directory.Exists(path))
             {
@@ -665,13 +762,14 @@ public partial class MainWindow : Window
                 TxtStatusType.Text = "フォルダ";
             }
 
-            _currentIndex = 0;
+            _currentIndex = Math.Max(0, Math.Min(_pages.Count - 1, startIndex));
             _zoom = 1.0;
             _rotation = 0;
             _isFlippedHorizontal = false;
 
             // UI updates
             var titleName = Path.GetFileName(path);
+            Title = string.IsNullOrEmpty(titleName) ? "LookLe" : $"{titleName} - LookLe";
             TxtTitleBadge.Text = titleName;
             BorderTitleBadge.Visibility = Visibility.Visible;
             PanelEmptyGuide.Visibility = _pages.Count > 0 ? Visibility.Collapsed : Visibility.Visible;
@@ -679,24 +777,9 @@ public partial class MainWindow : Window
 
             UpdateFavoriteStar();
             UpdateSiblingNavigation();
-            UpdateActiveLeftPaneItem(path);
-            ItemsFilmstrip.ItemsSource = _pages;
 
-            // Render first spread
+            // Render current spread
             await RenderCurrentSpreadAsync();
-
-            // Load thumbnails asynchronously and update UI via INotifyPropertyChanged
-            _ = Task.Run(async () =>
-            {
-                foreach (var p in _pages.ToList())
-                {
-                    var thumb = await _imagePipeline.LoadThumbnailAsync(p);
-                    if (thumb != null)
-                    {
-                        Dispatcher.Invoke(() => p.ThumbnailBitmap = thumb);
-                    }
-                }
-            });
         }
         catch (Exception ex)
         {
@@ -813,12 +896,25 @@ public partial class MainWindow : Window
         // Multi-page prefetch ahead (+6) and behind (-2)
         _imagePipeline.PrefetchPages(_pages, _currentIndex);
 
-        // Auto-scroll thumbnail filmstrip to center the active thumbnail(s)
-        if (ScrollFilmstrip != null && _pages.Count > 0)
+        // Update active highlight in Left Explorer / Bookshelf and auto-scroll to current page
+        UpdateActiveLeftPanePages(currentPage, isSingle ? null : nextPage);
+
+        var firstActive = _explorerItems.FirstOrDefault(i => i.IsActiveItem);
+        if (firstActive != null)
         {
-            double cardWidth = Math.Max(70.0, Math.Round(SliderThumbSize.Value * 0.68)) + 8;
-            double targetOffset = (_currentIndex * cardWidth) - (ScrollFilmstrip.ActualWidth / 2) + (cardWidth / 2);
-            ScrollFilmstrip.ScrollToHorizontalOffset(Math.Max(0, targetOffset));
+            if (_explorerViewMode == ExplorerViewMode.Grid && GridExplorerItems.Visibility == Visibility.Visible)
+            {
+                GridExplorerItems.ScrollIntoView(firstActive);
+            }
+            else if (ListExplorerItems.Visibility == Visibility.Visible)
+            {
+                ListExplorerItems.ScrollIntoView(firstActive);
+            }
+        }
+
+        if (_isLoupeActive)
+        {
+            UpdateLoupePosition(_lastMouseViewportPos);
         }
     }
 
@@ -903,6 +999,11 @@ public partial class MainWindow : Window
 
         TxtStatusZoom.Text = $"{Math.Round(_zoom * 100)}%";
         BtnZoomLevel.Content = $"{Math.Round(_zoom * 100)}%";
+
+        if (_isLoupeActive)
+        {
+            UpdateLoupePosition(_lastMouseViewportPos);
+        }
     }
 
     public void ToggleFlipHorizontal()
@@ -968,6 +1069,112 @@ public partial class MainWindow : Window
     {
         PopupFilter.IsOpen = !PopupFilter.IsOpen;
     }
+
+    public void ToggleLoupe()
+    {
+        _isLoupeActive = !_isLoupeActive;
+        UpdateLoupeState();
+    }
+
+    public void ToggleLoupeShape()
+    {
+        _isLoupeCircle = !_isLoupeCircle;
+        UpdateLoupeShape();
+        if (_isLoupeActive)
+        {
+            UpdateLoupePosition(_lastMouseViewportPos);
+        }
+    }
+
+    private void UpdateLoupeShape()
+    {
+        if (BorderLoupe == null || TxtLoupeMode == null) return;
+
+        double size = BorderLoupe.Width;
+        BorderLoupe.CornerRadius = _isLoupeCircle ? new CornerRadius(size / 2.0) : new CornerRadius(16);
+        TxtLoupeMode.Text = _isLoupeCircle ? " (円形)" : " (矩形)";
+    }
+
+    private void UpdateLoupeState()
+    {
+        if (CanvasLoupe == null) return;
+
+        if (_isLoupeActive)
+        {
+            CanvasLoupe.Visibility = Visibility.Visible;
+            if (BtnLoupe != null) BtnLoupe.Style = (Style)FindResource("ActivePillBtn");
+            if (LoupeVisualBrush != null)
+            {
+                LoupeVisualBrush.Visual = ViewportContentLayer;
+                LoupeVisualBrush.ViewboxUnits = BrushMappingMode.Absolute;
+                LoupeVisualBrush.ViewportUnits = BrushMappingMode.RelativeToBoundingBox;
+                LoupeVisualBrush.Viewport = new Rect(0, 0, 1, 1);
+                LoupeVisualBrush.Stretch = Stretch.Fill;
+            }
+
+            try
+            {
+                var pos = Mouse.GetPosition(GridMainViewport);
+                if (pos.X >= 0 && pos.Y >= 0 && pos.X <= GridMainViewport.ActualWidth && pos.Y <= GridMainViewport.ActualHeight)
+                {
+                    _lastMouseViewportPos = pos;
+                }
+                else if (GridMainViewport.ActualWidth > 0 && GridMainViewport.ActualHeight > 0)
+                {
+                    _lastMouseViewportPos = new Point(GridMainViewport.ActualWidth / 2.0, GridMainViewport.ActualHeight / 2.0);
+                }
+            }
+            catch { }
+
+            UpdateLoupeShape();
+            UpdateLoupePosition(_lastMouseViewportPos);
+        }
+        else
+        {
+            CanvasLoupe.Visibility = Visibility.Collapsed;
+            if (BtnLoupe != null) BtnLoupe.Style = (Style)FindResource("ToolbarBtn");
+        }
+    }
+
+    private void UpdateLoupePosition(Point mouseViewportPos)
+    {
+        if (!_isLoupeActive || CanvasLoupe == null || BorderLoupe == null || LoupeVisualBrush == null || ViewportContentLayer == null) return;
+
+        double vpW = GridMainViewport.ActualWidth;
+        double vpH = GridMainViewport.ActualHeight;
+        if (vpW <= 0 || vpH <= 0) return;
+
+        // Magnifying glass area: Up to 1000px or scaled down to fit viewport nicely
+        double targetSizeW = Math.Min(1000.0, Math.Min(vpW * 0.9, vpH * 0.9));
+        targetSizeW = Math.Max(250.0, targetSizeW);
+        double targetSizeH = _isLoupeCircle ? targetSizeW : Math.Min(targetSizeW * 0.75, vpH * 0.9);
+
+        BorderLoupe.Width = targetSizeW;
+        BorderLoupe.Height = targetSizeH;
+        BorderLoupe.CornerRadius = _isLoupeCircle ? new CornerRadius(targetSizeW / 2.0) : new CornerRadius(16);
+
+        // Center the loupe over the mouse cursor
+        double left = mouseViewportPos.X - (targetSizeW / 2.0);
+        double top = mouseViewportPos.Y - (targetSizeH / 2.0);
+
+        Canvas.SetLeft(BorderLoupe, left);
+        Canvas.SetTop(BorderLoupe, top);
+
+        // 2x Magnification: ViewportContentLayer coordinates match GridMainViewport 1:1 with zero offset
+        double viewboxW = targetSizeW / _loupeFactor;
+        double viewboxH = targetSizeH / _loupeFactor;
+
+        double viewboxX = mouseViewportPos.X - (viewboxW / 2.0);
+        double viewboxY = mouseViewportPos.Y - (viewboxH / 2.0);
+
+        LoupeVisualBrush.Viewbox = new Rect(viewboxX, viewboxY, viewboxW, viewboxH);
+    }
+
+    private void ToggleLoupe_Click(object sender, RoutedEventArgs e)
+    {
+        ToggleLoupe();
+    }
+
 
     public async void GoToPage(int index)
     {
@@ -1155,7 +1362,7 @@ public partial class MainWindow : Window
 
         UpdateBookshelfUI();
         UpdateFavoriteStar();
-        UpdateActiveLeftPaneItem(_currentPath);
+        UpdateActiveLeftPanePath(_currentPath);
     }
 
     private void RemoveFavorite_Click(object sender, RoutedEventArgs e)
@@ -1195,11 +1402,6 @@ public partial class MainWindow : Window
         }
     }
 
-    private void ToggleFilmstrip_Click(object sender, RoutedEventArgs e)
-    {
-        BorderFilmstrip.Visibility = BorderFilmstrip.Visibility == Visibility.Visible ? Visibility.Collapsed : Visibility.Visible;
-    }
-
     private void ToggleFullscreen_Click(object sender, RoutedEventArgs e)
     {
         _isFullscreen = !_isFullscreen;
@@ -1212,7 +1414,6 @@ public partial class MainWindow : Window
             WindowStyle = WindowStyle.None;
             WindowState = WindowState.Maximized;
             ToolbarBorder.Visibility = Visibility.Collapsed;
-            BorderFilmstrip.Visibility = Visibility.Collapsed;
             ColSidebar.Width = new GridLength(0);
             ColSplitter.Width = new GridLength(0);
         }
@@ -1221,7 +1422,6 @@ public partial class MainWindow : Window
             WindowStyle = WindowStyle.SingleBorderWindow;
             WindowState = WindowState.Normal;
             ToolbarBorder.Visibility = Visibility.Visible;
-            BorderFilmstrip.Visibility = Visibility.Visible;
             double restoreW = _lastUserSidebarWidth >= 100 ? _lastUserSidebarWidth : 290.0;
             ColSidebar.Width = new GridLength(restoreW);
             ColSplitter.Width = new GridLength(4);
@@ -1308,12 +1508,6 @@ public partial class MainWindow : Window
             ViewMode.SpreadLtr => "見開き (左開き)",
             _ => "単ページ"
         };
-
-        // Update Filmstrip FlowDirection: RTL for Manga Spread RTL, LTR for others
-        if (ScrollFilmstrip != null)
-        {
-            ScrollFilmstrip.FlowDirection = _viewMode == ViewMode.SpreadRtl ? FlowDirection.RightToLeft : FlowDirection.LeftToRight;
-        }
     }
 
     private void FitWindow_Click(object sender, RoutedEventArgs e) { _fitMode = FitMode.FitWindow; UpdateFitModeButtons(); ApplyFitMode(); }
@@ -1358,20 +1552,24 @@ public partial class MainWindow : Window
     private void PrevSibling_Click(object sender, RoutedEventArgs e) => PrevSibling();
     private void NextSibling_Click(object sender, RoutedEventArgs e) => NextSibling();
 
-    private void ThumbCard_Click(object sender, MouseButtonEventArgs e)
-    {
-        if (((FrameworkElement)sender).DataContext is ViewerPage page)
-        {
-            GoToPage(page.Index);
-        }
-    }
-
     #endregion
 
     #region Mouse & Global Keyboard Navigation (PreviewKeyDown with RTL Key Mappings & Back Navigation)
 
     private void MainWindow_PreviewMouseDown(object sender, MouseButtonEventArgs e)
     {
+        if (e.ChangedButton == MouseButton.Middle)
+        {
+            e.Handled = true;
+            try
+            {
+                _lastMouseViewportPos = e.GetPosition(GridMainViewport);
+            }
+            catch { }
+            ToggleLoupe();
+            return;
+        }
+
         if (e.ChangedButton == MouseButton.XButton1)
         {
             e.Handled = true;
@@ -1381,6 +1579,19 @@ public partial class MainWindow : Window
         {
             e.Handled = true;
             NextSibling();
+        }
+    }
+
+    private void MainWindow_PreviewMouseMove(object sender, MouseEventArgs e)
+    {
+        if (_isLoupeActive)
+        {
+            try
+            {
+                _lastMouseViewportPos = e.GetPosition(GridMainViewport);
+                UpdateLoupePosition(_lastMouseViewportPos);
+            }
+            catch { }
         }
     }
 
@@ -1413,7 +1624,15 @@ public partial class MainWindow : Window
 
     private void Viewport_MouseDown(object sender, MouseButtonEventArgs e)
     {
-        if (e.RightButton == MouseButtonState.Pressed || e.MiddleButton == MouseButtonState.Pressed || (_zoom > 1.05 && e.LeftButton == MouseButtonState.Pressed))
+        if (e.MiddleButton == MouseButtonState.Pressed)
+        {
+            _lastMouseViewportPos = e.GetPosition(GridMainViewport);
+            ToggleLoupe();
+            e.Handled = true;
+            return;
+        }
+
+        if (e.RightButton == MouseButtonState.Pressed || (_zoom > 1.05 && e.LeftButton == MouseButtonState.Pressed))
         {
             _isPanning = true;
             _panStart = e.GetPosition(this);
@@ -1424,6 +1643,13 @@ public partial class MainWindow : Window
 
     private void Viewport_MouseMove(object sender, MouseEventArgs e)
     {
+        _lastMouseViewportPos = e.GetPosition(GridMainViewport);
+
+        if (_isLoupeActive)
+        {
+            UpdateLoupePosition(_lastMouseViewportPos);
+        }
+
         if (_isPanning)
         {
             var cur = e.GetPosition(this);
@@ -1574,9 +1800,16 @@ public partial class MainWindow : Window
                 ApplyFitMode();
                 ApplyTransform();
                 break;
-            case Key.F3:
+            case Key.L:
                 e.Handled = true;
-                ToggleFilmstrip_Click(this, new RoutedEventArgs());
+                if (Keyboard.Modifiers.HasFlag(ModifierKeys.Shift))
+                {
+                    ToggleLoupeShape();
+                }
+                else
+                {
+                    ToggleLoupe();
+                }
                 break;
             case Key.F4:
                 e.Handled = true;
@@ -1592,15 +1825,21 @@ public partial class MainWindow : Window
                 OpenShortcuts_Click(this, new RoutedEventArgs());
                 break;
             case Key.Escape:
-                if (PopupFilter.IsOpen)
+                if (_isLoupeActive)
+                {
+                    _isLoupeActive = false;
+                    UpdateLoupeState();
+                    e.Handled = true;
+                }
+                else if (PopupFilter.IsOpen)
                 {
                     PopupFilter.IsOpen = false;
                     e.Handled = true;
                 }
-                else if (_isFullscreen)
+                else
                 {
                     e.Handled = true;
-                    ToggleFullscreen_Click(this, new RoutedEventArgs());
+                    Close();
                 }
                 break;
         }

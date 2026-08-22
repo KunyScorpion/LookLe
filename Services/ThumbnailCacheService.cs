@@ -13,8 +13,7 @@ public class ThumbnailCacheService
 
     public ThumbnailCacheService()
     {
-        var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        _cacheDir = Path.Combine(localAppData, "LeeyesViewer", "Thumbnails");
+        _cacheDir = Path.Combine(AppContext.BaseDirectory, "Thumbnails");
 
         if (!Directory.Exists(_cacheDir))
         {

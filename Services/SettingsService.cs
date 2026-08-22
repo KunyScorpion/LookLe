@@ -10,8 +10,7 @@ public class SettingsService
 
     public SettingsService()
     {
-        var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        var appDir = Path.Combine(localAppData, "LeeyesViewer");
+        var appDir = AppContext.BaseDirectory;
         if (!Directory.Exists(appDir))
         {
             Directory.CreateDirectory(appDir);

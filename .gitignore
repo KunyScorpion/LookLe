@@ -1,0 +1,35 @@
+## Visual Studio / .NET Build Artifacts
+bin/
+obj/
+publish/
+[Bb]in/
+[Oo]bj/
+
+## Visual Studio temporary files, build results, and options
+.vs/
+*.user
+*.userosscache
+*.sln.docstates
+*.suo
+*.userprefs
+
+## Rider / JetBrains
+.idea/
+*.sln.iml
+
+## VS Code
+.vscode/
+
+## Windows thumbnail cache & desktop.ini
+Thumbs.db
+ehthumbs.db
+ehthumbs_vista.db
+Desktop.ini
+$RECYCLE.BIN/
+
+## Log & Test Results
+*.log
+TestResults/
+
+## Application local state / user settings if created in working dir
+settings.json
