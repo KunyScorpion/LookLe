@@ -1,4 +1,4 @@
-# LookLe - High-Performance Portable Manga & Image Viewer
+# LookLe - 高速ポータブル画像ビューアー
 
 <div align="center">
 
@@ -14,7 +14,9 @@
 </div>
 
 ---
-
+> [!WARNING]
+> **ご注意 / お願い**
+> 本リポジトリは自分用のお試しプロジェクト（WIP）です。不具合や未実装機能が多数含まれています。
 ## 📖 概要 (Overview)
 
 **LookLe**（ルックル）は、大量のイラスト・コミック・自炊書籍・書庫ファイルを極めて高速かつ快適に閲覧するために設計された、Windows 向けのポータブル画像ビューアです。
